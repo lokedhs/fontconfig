@@ -95,19 +95,49 @@ actual registration of the object is handled by the subclass."))
       (:fc-type-lang-set :lang-set-not-implemented)
       (:fc-type-range :range-not-implemented))))
 
+(defun pattern-get-internal (p object index)
+  (cffi:with-foreign-objects ((value '(:struct fc-value)))
+    (let ((result (fc-pattern-get p object index value)))
+      (case result
+        (:fc-result-match (values (value->lisp value) :match))
+        (:fc-result-no-match (values nil :no-match))
+        (:fc-result-no-id (values nil :no-id))
+        (t (error 'fontconfig-match-error :status result))))))
+
 (defun pattern-get (pattern object index)
   (check-type pattern pattern)
   (check-type object string)
   (check-type index integer)
   (let ((p (fontconfig-memory-mixin/ptr pattern)))
-    (cffi:with-foreign-objects ((value '(:struct fc-value)))
-      (let ((result (fc-pattern-get p object index value)))
-        (case result
-          (:fc-result-match (values (value->lisp value) :match))
-          (:fc-result-no-match (values nil :no-match))
-          (:fc-result-no-id (values nil :no-id))
-          (t (error 'fontconfig-match-error :status result)))))))
+    (pattern-get-internal p object index)))
 
 (defun config-home ()
   (let ((result (fc-config-home)))
     (values (cffi:foreign-string-to-lisp result))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Simple interface
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun match-font (values)
+  (let ((pattern (fc-pattern-create)))
+    (unwind-protect
+         (progn
+           (loop
+             for (key . value) in values
+             do (add-value-to-pattern pattern key value))
+           (fc-default-substitute pattern)
+           (cffi:with-foreign-objects ((result 'fc-result))
+             (let* ((matched (fc-font-match (find-config) pattern result))
+                    (result-obj (cffi:mem-ref result 'fc-result)))
+               (unwind-protect
+                    (progn
+                      (unless (eq result-obj :fc-result-match)
+                        (error 'fontconfig-match-error :status result-obj))
+                      `((:family . ,(pattern-get-internal matched "family" 0))
+                        (:style . ,(pattern-get-internal matched "style" 0))
+                        (:file . ,(pattern-get-internal matched "file" 0))
+                        (:fullname . ,(pattern-get-internal matched "fullname" 0))))
+                 (unless (cffi:null-pointer-p matched)
+                   (fc-pattern-destroy matched))))))
+      (fc-pattern-destroy pattern))))
