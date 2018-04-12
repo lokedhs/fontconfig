@@ -7,4 +7,5 @@
            #:init-bring-up-to-date
            #:make-pattern
            #:pattern-get
-           #:config-home))
+           #:config-home
+           #:match-font))
