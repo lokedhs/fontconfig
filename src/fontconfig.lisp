@@ -119,25 +119,57 @@ actual registration of the object is handled by the subclass."))
 ;;; Simple interface
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defmacro with-new-pattern ((sym) &body body)
+  (alexandria:with-gensyms (pattern)
+    `(let ((,pattern (fc-pattern-create)))
+       (unwind-protect
+            (let ((,sym ,pattern))
+              ,@body)
+         (fc-pattern-destroy ,pattern)))))
+
+(defun pattern-to-lisp (pattern)
+  `((:family . ,(pattern-get-internal pattern "family" 0))
+    (:style . ,(pattern-get-internal pattern "style" 0))
+    (:file . ,(pattern-get-internal pattern "file" 0))
+    (:fullname . ,(pattern-get-internal pattern "fullname" 0))))
+
 (defun match-font (values)
-  (let ((pattern (fc-pattern-create)))
-    (unwind-protect
-         (progn
-           (loop
-             for (key . value) in values
-             do (add-value-to-pattern pattern key value))
-           (fc-default-substitute pattern)
-           (cffi:with-foreign-objects ((result 'fc-result))
-             (let* ((matched (fc-font-match (find-config) pattern result))
-                    (result-obj (cffi:mem-ref result 'fc-result)))
-               (unwind-protect
-                    (progn
-                      (unless (eq result-obj :fc-result-match)
-                        (error 'fontconfig-match-error :status result-obj))
-                      `((:family . ,(pattern-get-internal matched "family" 0))
-                        (:style . ,(pattern-get-internal matched "style" 0))
-                        (:file . ,(pattern-get-internal matched "file" 0))
-                        (:fullname . ,(pattern-get-internal matched "fullname" 0))))
-                 (unless (cffi:null-pointer-p matched)
-                   (fc-pattern-destroy matched))))))
-      (fc-pattern-destroy pattern))))
+  (with-new-pattern (pattern)
+    (loop
+      for (key . value) in values
+      do (add-value-to-pattern pattern key value))
+    (fc-default-substitute pattern)
+    (cffi:with-foreign-objects ((result 'fc-result))
+      (let* ((matched (fc-font-match (find-config) pattern result))
+             (result-obj (cffi:mem-ref result 'fc-result)))
+        (unwind-protect
+             (progn
+               (unless (eq result-obj :fc-result-match)
+                 (error 'fontconfig-match-error :status result-obj))
+               (pattern-to-lisp matched))
+          (unless (cffi:null-pointer-p matched)
+            (fc-pattern-destroy matched)))))))
+
+(defmacro with-object-set ((sym objects) &body body)
+  (alexandria:once-only (objects)
+    (alexandria:with-gensyms (object-set obj)
+      `(let ((,object-set (fc-object-set-create)))
+         (unwind-protect
+              (progn
+                (loop
+                  for ,obj in ,objects
+                  do (fc-object-set-add ,object-set ,obj))
+                (let ((,sym ,object-set))
+                  ,@body))
+           (fc-object-set-destroy ,object-set))))))
+
+(defun font-list ()
+  (with-object-set (object-set (list "family" "style" "file" "fullname"))
+    (with-new-pattern (pattern)
+      (let ((f (fc-font-list (find-config) pattern object-set)))
+        (loop
+          with n = (cffi:foreign-slot-value f '(:struct fc-font-set) 'nfont)
+          with fonts-ptr = (cffi:foreign-slot-value f '(:struct fc-font-set) 'fonts)
+          for i from 0 below n
+          for font = (cffi:mem-aref fonts-ptr :pointer i)
+          collect (pattern-to-lisp font))))))

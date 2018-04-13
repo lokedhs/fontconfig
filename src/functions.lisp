@@ -10,6 +10,7 @@
 (cffi:defcfun ("FcGetVersion" fc-get-version) :int)
 (cffi:defcfun ("FcInitReinitialize" fc-init-reinitialize) fc-bool)
 (cffi:defcfun ("FcInitBringUptoDate" fc-init-bring-up-to-date) fc-bool)
+(cffi:defcfun ("FcConfigHome" fc-config-home) :pointer)
 
 (cffi:defcfun ("FcDefaultSubstitute" fc-default-substitute) :void
   (pattern :pointer))
@@ -47,5 +48,21 @@
   (config :pointer)
   (pattern :pointer)
   (result (:pointer fc-result)))
+(cffi:defcfun ("FcFontSetList" fc-font-set-list) :pointer
+  (config :pointer)
+  (font-set :pointer)
+  (num-sets :int)
+  (pattern :pointer)
+  (object-set :pointer))
 
-(cffi:defcfun ("FcConfigHome" fc-config-home) :pointer)
+(cffi:defcfun ("FcObjectSetCreate" fc-object-set-create) :pointer)
+(cffi:defcfun ("FcObjectSetDestroy" fc-object-set-destroy) :void
+  (object-set :pointer))
+(cffi:defcfun ("FcObjectSetAdd" fc-object-set-add) fc-bool
+  (object-set :pointer)
+  (object :string))
+
+(cffi:defcfun ("FcFontList" fc-font-list) (:pointer (:struct fc-font-set))
+  (config :pointer)
+  (pattern :pointer)
+  (object-set :pointer))
